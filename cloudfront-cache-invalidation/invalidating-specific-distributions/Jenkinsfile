@@ -1,0 +1,28 @@
+pipeline {
+   agent any
+   parameters {
+        choice(name: 'environment', choices: ['DEV', 'ACCEPTANCE', 'STAGING', 'PRODUCTION'], description: 'Please choose environment')
+        text(name: 'cloudfrontdistributionids', defaultValue: 'E3OOK73MDA8U5D\nE1MNOXYLRGE6LE', description: 'Please the enter the cloudfront distribution ids')
+    }
+   stages{
+    stage('cloudfront-cache-invalidation'){
+      environment { 
+         AWS_ACCESS_KEY_ID = credentials("${params.environment}-ACCESS-KEY-ID")
+         AWS_SECRET_ACCESS_KEY = credentials("${params.environment}-SECRET-ACCESS-KEY") 
+      }
+      steps{
+        script{
+            def list =  params.cloudfrontdistributionids
+            writeFile file: 'cloudfront_ids.txt', text: list
+            def distributionids = readFile("cloudfront_ids.txt").readLines()
+            for(distributionid in distributionids){
+                create_cmd = """aws cloudfront create-invalidation --distribution-id $distributionid --paths "/*" | jq -r .Invalidation.Id"""
+                INVALIDATION_ID = sh(script: create_cmd, returnStdout: true)
+                wait_cmd = """aws cloudfront wait invalidation-completed --distribution-id $distributionid --id $INVALIDATION_ID"""
+                sh(wait_cmd)
+            }
+        }
+      }
+    }
+   }
+}
